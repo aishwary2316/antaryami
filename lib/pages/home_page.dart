@@ -153,7 +153,7 @@ class _HomePageState extends State<HomePage> {
   Widget _buildWelcome() {
     return Center(
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Image.asset('assets/welcome.png', width: 150, height: 150),
+        Image.asset('assets/logo.png', width: 150, height: 150),
         const SizedBox(height: 24),
         const Text(
           'Hi there!\nAsk me anything about our services.',
