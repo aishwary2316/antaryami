@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:antaryami/pages/scanner.dart';
 import 'package:dash_chat_2/dash_chat_2.dart';
 import 'package:flutter/material.dart';
@@ -47,6 +45,7 @@ class _HomePageState extends State<HomePage> {
   );
 
   final List<ChatMessage> _messages = [];
+  bool _hasShownRecommendations = false; // Jugaad flag
 
   final List<Product> _products = [
     Product(
@@ -96,10 +95,8 @@ class _HomePageState extends State<HomePage> {
         onSend: _handleSend,
         messageOptions: MessageOptions(
           currentUserContainerColor: Colors.amberAccent.shade100,
-          //containerColor: Color.fromARGB(241, 255, 255, 255),
           textColor: Colors.grey.shade800,
           currentUserTextColor: Colors.white,
-
           top: (msg, previous, next) {
             if (msg.user.id == _geminiUser.id && msg.text == '__Recommendations...__') {
               final items = msg.customProperties?['products'] as List<dynamic>? ?? [];
@@ -110,19 +107,11 @@ class _HomePageState extends State<HomePage> {
             }
             return const SizedBox.shrink();
           },
-
           messageTextBuilder: (msg, _, __) {
             if (msg.text == '...') {
               return const Text('...', style: TextStyle(fontSize: 16));
             }
-            Color textColor;
-            if (msg.user.id == _currentUser.id) {
-              textColor = Colors.black;
-            } else if (msg.user.id == _geminiUser.id) {
-              textColor = Colors.black;
-            } else {
-              textColor = Colors.grey; // fallback or other bots
-            }
+            Color textColor = msg.user.id == _currentUser.id ? Colors.black : Colors.black;
             return MarkdownBody(
               data: msg.text,
               styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
@@ -175,6 +164,18 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  String _buildChatHistory() {
+    final last10 = _messages.take(20).toList().reversed.toList(); // Last 10 exchanges
+    String history = "";
+    for (var msg in last10) {
+      if (msg.text != '...' && msg.text != '__Recommendations...__') {
+        final sender = msg.user.id == _currentUser.id ? "User" : "Antaryami";
+        history += "$sender: ${msg.text}\n";
+      }
+    }
+    return history;
+  }
+
   Future<void> _handleSend(ChatMessage userMessage) async {
     setState(() => _messages.insert(0, userMessage));
     setState(() => _messages.insert(0, ChatMessage(
@@ -184,27 +185,45 @@ class _HomePageState extends State<HomePage> {
     )));
 
     try {
-      final resp = await _gemini.prompt(parts: [Part.text(userMessage.text)]);
+      final chatHistory = _buildChatHistory();
+      final inventoryContext = """
+You are Antaryami, a shopping assistant. Our current inventory has these products:
+1. Fur Pink Jacket (Woman, M) - \$80.50 - A cozy fur pink jacket, perfect for chilly evenings
+2. Silk Pink Dress (Woman, L) - \$130.00 - Elegant silk dress in pink, ideal for summer outings  
+3. Pink Skirt (Woman, M) - \$60.99 - Flared pink skirt with lightweight fabric
+
+Only recommend products from this inventory. Be helpful and suggest the most relevant items based on user preferences.
+
+Previous conversation:
+$chatHistory
+
+User: ${userMessage.text}""";
+
+      final resp = await _gemini.prompt(parts: [Part.text(inventoryContext)]);
       final fullText = resp?.output ?? '';
 
       setState(() {
         _messages.removeWhere((m) => m.user.id == _geminiUser.id && m.text == '...');
       });
 
-      setState(() => _messages.insert(0, ChatMessage(
-        user: _geminiUser,
-        text: '__Recommendations...__',
-        createdAt: DateTime.now(),
-        customProperties: {
-          'products': _products.map((p) => {
-            'name': p.name,
-            'subtitle': p.subtitle,
-            'price': p.price,
-            'imageAsset': p.imageAsset,
-            'description': p.description,
-          }).toList(),
-        },
-      )));
+      // Show recommendations only on first message
+      if (!_hasShownRecommendations) {
+        setState(() => _messages.insert(0, ChatMessage(
+          user: _geminiUser,
+          text: '__Recommendations...__',
+          createdAt: DateTime.now(),
+          customProperties: {
+            'products': _products.map((p) => {
+              'name': p.name,
+              'subtitle': p.subtitle,
+              'price': p.price,
+              'imageAsset': p.imageAsset,
+              'description': p.description,
+            }).toList(),
+          },
+        )));
+        _hasShownRecommendations = true;
+      }
 
       setState(() => _messages.insert(0, ChatMessage(
         user: _geminiUser,
